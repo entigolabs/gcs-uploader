@@ -1,0 +1,21 @@
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+WORKDIR /go/gcs-uploader
+COPY go.* ./
+RUN go mod download
+COPY . .
+ARG TARGETARCH
+ARG TARGETOS
+
+RUN --mount=target=. \
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg \
+    GOOS="$TARGETOS" GOARCH="$TARGETARCH" go build -ldflags "-s -w" -o /out/gcs-uploader .
+
+FROM alpine:3
+RUN apk add --no-cache python3 curl bash && \
+    curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --install-dir=/opt > /dev/null 2>&1 && \
+    rm -rf /opt/google-cloud-sdk/.install /opt/google-cloud-sdk/platform /opt/google-cloud-sdk/data /opt/google-cloud-sdk/bin/anthoscli* && \
+    find /opt/google-cloud-sdk -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; true
+
+ENV PATH="/opt/google-cloud-sdk/bin:$PATH"
+COPY --from=build /out/gcs-uploader /usr/bin/
